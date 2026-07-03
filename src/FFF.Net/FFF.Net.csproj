@@ -10,7 +10,7 @@
   </PropertyGroup>
   
   <PropertyGroup>
-    <Version>0.9.6</Version>
+    <Version>0.9.6.1</Version>
     <Authors>Zozo</Authors>
     <Description>C# wrapper for the fff fuzzy finder library.</Description>
     <PackageTags>fff;fuzzy;search;grep;file-finder;AOT;native-interop</PackageTags>
@@ -19,7 +19,7 @@
     <RepositoryUrl>https://github.com/ZozoTZM/fff.Net</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
-
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <IncludeSymbols>true</IncludeSymbols>
@@ -30,21 +30,13 @@
   <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
-  
-  
+
   <ItemGroup>
-    <Content Include="runtimes\**\*.*">
-      <PackagePath>runtimes</PackagePath>
-      <Pack>true</Pack>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
+  
   <ItemGroup>
-    <!-- 1. for NuGet package -->
-    <None Include="runtimes\**\*.*" Pack="true" PackagePath="runtimes" />
-
-    <!-- 2. For local dev -->
-
+    
     <!-- Windows -->
     <None Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))" Include="runtimes\win-x64\native\fff.dll">
       <Link>fff.dll</Link>
