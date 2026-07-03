@@ -1,0 +1,57 @@
+name: Publish FFF.Net to NuGet
+
+on:
+  push:
+    tags:
+      - 'v*' 
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write 
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Create Runtime Directories
+        run: |
+          mkdir -p src/FFF.Net/runtimes/win-x64/native
+          mkdir -p src/FFF.Net/runtimes/linux-x64/native
+          mkdir -p src/FFF.Net/runtimes/osx-x64/native
+          mkdir -p src/FFF.Net/runtimes/osx-arm64/native
+
+      - name: Download Native Binaries
+        run: |
+          # Download fff
+          curl -L -o fff.dll https://github.com/dmtrKovalenko/fff/releases/download/0.9.6/c-lib-x86_64-pc-windows-msvc.dll
+          curl -L -o libfff.so https://github.com/dmtrKovalenko/fff/releases/download/0.9.6/c-lib-x86_64-unknown-linux-gnu.so
+          curl -L -o libfff-intel.dylib https://github.com/dmtrKovalenko/fff/releases/download/0.9.6/c-lib-x86_64-apple-darwin.dylib
+          curl -L -o libfff-arm.dylib https://github.com/dmtrKovalenko/fff/releases/download/0.9.6/c-lib-aarch64-apple-darwin.dylib
+
+      - name: Place Renamed Binaries
+        run: |
+          mv fff.dll src/FFF.Net/runtimes/win-x64/native/fff.dll
+          mv libfff.so src/FFF.Net/runtimes/linux-x64/native/libfff.so
+          mv libfff-intel.dylib src/FFF.Net/runtimes/osx-x64/native/libfff.dylib
+          mv libfff-arm.dylib src/FFF.Net/runtimes/osx-arm64/native/libfff.dylib
+
+      - name: Build and Pack Library
+        run: |
+          dotnet pack src/FFF.Net/FFF.Net.csproj -c Release -o out
+
+      
+      - name: NuGet Login
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ZozoV 
+
+      - name: Publish to NuGet
+        run: |
+          dotnet nuget push out/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json

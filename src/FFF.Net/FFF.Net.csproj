@@ -5,15 +5,69 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+  
+  <PropertyGroup>
+    <Version>0.9.6</Version>
+    <Authors>Zozo</Authors>
+    <Description>C# wrapper for the fff fuzzy finder library.</Description>
+    <PackageTags>fff;fuzzy;search;grep;file-finder;AOT;native-interop</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/ZozoTZM/fff.Net</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ZozoTZM/fff.Net</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
+
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+  
+  
   <ItemGroup>
-    <!-- copy native DLL to output -->
-    <None Include="runtimes\win-x64\native\c-lib-x86_64-pc-windows-msvc.dll">
-      <Link>c-lib-x86_64-pc-windows-msvc.dll</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    <Content Include="runtimes\**\*.*">
+      <PackagePath>runtimes</PackagePath>
       <Pack>true</Pack>
-      <PackagePath>runtimes/win-x64/native</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 1. for NuGet package -->
+    <None Include="runtimes\**\*.*" Pack="true" PackagePath="runtimes" />
+
+    <!-- 2. For local dev -->
+
+    <!-- Windows -->
+    <None Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))" Include="runtimes\win-x64\native\fff.dll">
+      <Link>fff.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+
+    <!-- Linux -->
+    <None Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))" Include="runtimes\linux-x64\native\libfff.so">
+      <Link>libfff.so</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+
+    <!-- macOS new -->
+    <None Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX))) And $([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture) == 'Arm64'" Include="runtimes\osx-arm64\native\libfff.dylib">
+      <Link>libfff.dylib</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+
+    <!-- macOS old -->
+    <None Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX))) And $([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture) != 'Arm64'" Include="runtimes\osx-x64\native\libfff.dylib">
+      <Link>libfff.dylib</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+  
 </Project>

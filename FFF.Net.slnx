@@ -5,4 +5,7 @@
   <Folder Name="/src/">
     <Project Path="src/FFF.Net/FFF.Net.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FFF.Net.Tests/FFF.Net.Tests.csproj" />
+  </Folder>
 </Solution>
