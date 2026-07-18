@@ -9,6 +9,7 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     permissions:
+      contents: write
       id-token: write 
     steps:
       - name: Checkout Code
@@ -28,11 +29,11 @@ jobs:
 
       - name: Download Native Binaries
         run: |
-          # Download fff
-          curl -L -o fff.dll https://github.com/dmtrKovalenko/fff/releases/download/0.9.6/c-lib-x86_64-pc-windows-msvc.dll
-          curl -L -o libfff.so https://github.com/dmtrKovalenko/fff/releases/download/0.9.6/c-lib-x86_64-unknown-linux-gnu.so
-          curl -L -o libfff-intel.dylib https://github.com/dmtrKovalenko/fff/releases/download/0.9.6/c-lib-x86_64-apple-darwin.dylib
-          curl -L -o libfff-arm.dylib https://github.com/dmtrKovalenko/fff/releases/download/0.9.6/c-lib-aarch64-apple-darwin.dylib
+          # Download fff v0.10.0
+          curl -L -o fff.dll https://github.com/dmtrKovalenko/fff/releases/download/v0.10.0/c-lib-x86_64-pc-windows-msvc.dll
+          curl -L -o libfff.so https://github.com/dmtrKovalenko/fff/releases/download/v0.10.0/c-lib-x86_64-unknown-linux-gnu.so
+          curl -L -o libfff-intel.dylib https://github.com/dmtrKovalenko/fff/releases/download/v0.10.0/c-lib-x86_64-apple-darwin.dylib
+          curl -L -o libfff-arm.dylib https://github.com/dmtrKovalenko/fff/releases/download/v0.10.0/c-lib-aarch64-apple-darwin.dylib
 
       - name: Place Renamed Binaries
         run: |
@@ -45,6 +46,11 @@ jobs:
         run: |
           dotnet pack src/FFF.Net/FFF.Net.csproj -c Release -o out
 
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.nupkg
+          generate_release_notes: true
       
       - name: NuGet Login
         uses: NuGet/login@v1
@@ -54,4 +60,4 @@ jobs:
 
       - name: Publish to NuGet
         run: |
-          dotnet nuget push out/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+          dotnet nuget push out/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

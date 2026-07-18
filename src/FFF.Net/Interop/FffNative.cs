@@ -34,6 +34,7 @@ internal static partial class FffNative
         public ulong CacheBudgetMaxFileSize;
         public NativeBool EnableFsRootScanning;
         public NativeBool EnableHomeDirScanning;
+        public NativeBool FollowSymlinks;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -94,6 +95,29 @@ internal static partial class FffNative
         public NativeBool IsWatcherReady;
         public NativeBool IsWarmupComplete;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct FffNativeWatchEvent
+    {
+        public IntPtr Path;
+        public byte Kind;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct FffNativeWatchEventBatch
+    {
+        public IntPtr Events;
+        public uint Count;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct FffNativeWatchOptions
+    {
+        public uint Version;
+        public IntPtr Ignore;
+        public uint IgnoreCount;
+    }
+
     [LibraryImport(DllName, EntryPoint = "fff_health_check")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     public static partial IntPtr FffHealthCheck(IntPtr fffHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string? testPath);
@@ -122,5 +146,19 @@ internal static partial class FffNative
     [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
     public static partial IntPtr FffGetBasePath(IntPtr fffHandle);
 
+    [LibraryImport(DllName, EntryPoint = "fff_result_get_success")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    public static partial NativeBool FffResultGetSuccess(IntPtr resultPtr);
 
+    [LibraryImport(DllName, EntryPoint = "fff_result_get_error")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    public static partial IntPtr FffResultGetError(IntPtr resultPtr);
+
+    [LibraryImport(DllName, EntryPoint = "fff_result_get_handle")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    public static partial IntPtr FffResultGetHandle(IntPtr resultPtr); 
+
+    [LibraryImport(DllName, EntryPoint = "fff_result_get_int_value")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+    public static partial long FffResultGetIntValue(IntPtr resultPtr);
 }

@@ -1,4 +1,4 @@
-﻿using FFF.Net;
+using FFF.Net;
 using FFF.Net.Models;
 
 Console.Title = "FFF.Net Feature Showcase";
@@ -44,7 +44,8 @@ try
     var options = new FffCreateOptions
     {
         BasePath = targetPath,
-        Watch = false,
+        Watch = true,
+        FollowSymlinks = true,
         EnableMmapCache = false,
         EnableContentIndexing = false
     };
@@ -54,11 +55,12 @@ try
 
     Console.WriteLine("Scanning files in background...");
     bool done = finder.WaitForScan(TimeSpan.FromSeconds(10));
+    finder.WaitForWatcherReady(TimeSpan.FromSeconds(5));
     if (done)
     {
         var progress = finder.ScanProgress;
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"Initial Scan completed successfully! Indexed {progress.ScannedFilesCount} files.");
+        Console.WriteLine($"Initial Scan completed successfully! Indexed {progress.ScannedFilesCount} files. Watcher ready: {progress.IsWatcherReady}");
         Console.ResetColor();
     }
     else
@@ -92,8 +94,9 @@ using (finder)
         Console.WriteLine("6. Multi-Grep (OR search for multiple keywords)");
         Console.WriteLine("7. View Scan Progress & Metadata");
         Console.WriteLine("8. Re-index a different directory");
-        Console.WriteLine("9. Exit");
-        Console.Write("Enter your choice (1-9): ");
+        Console.WriteLine("9. Live File Watching Showcase (Subscribe to file changes)");
+        Console.WriteLine("10. Exit");
+        Console.Write("Enter your choice (1-10): ");
 
         string choice = Console.ReadLine() ?? "";
         Console.WriteLine();
@@ -127,6 +130,9 @@ using (finder)
                     Reindex(finder);
                     break;
                 case "9":
+                    RunLiveWatcherShowcase(finder);
+                    break;
+                case "10":
                     exit = true;
                     Console.WriteLine("Goodbye!");
                     break;
@@ -273,4 +279,34 @@ static void Reindex(FffFinder finder)
     Console.ForegroundColor = ConsoleColor.Green;
     Console.WriteLine("Re-indexing complete.");
     Console.ResetColor();
+}
+
+static void RunLiveWatcherShowcase(FffFinder finder)
+{
+    Console.WriteLine("\n=== Live File Watching Showcase ===");
+    Console.Write("Enter glob pattern to watch (default '*.*' or '*.cs'): ");
+    string pattern = Console.ReadLine() ?? "";
+    if (string.IsNullOrWhiteSpace(pattern)) pattern = "*.*";
+
+    var watchOpts = new FffWatchOptions
+    {
+        Ignore = new[] { "bin", "obj", ".git", ".vs" }
+    };
+
+    Console.WriteLine($"Subscribing to live events matching '{pattern}'. Press ENTER to stop watching and return to menu...");
+
+    using var subscription = finder.Watch(pattern, events =>
+    {
+        foreach (var evt in events)
+        {
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($" => [{evt.Kind}] {evt.Path}");
+            Console.ResetColor();
+        }
+    }, watchOpts);
+
+    Console.WriteLine($"Active Watch ID: {subscription.WatchId}. Try creating, editing, or deleting a file now!");
+    Console.ReadLine();
+
+    Console.WriteLine("Unsubscribed from watch events.");
 }

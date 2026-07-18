@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -10,7 +10,7 @@
   </PropertyGroup>
   
   <PropertyGroup>
-    <Version>0.9.6.1</Version>
+    <Version>0.10.0</Version>
     <Authors>Zozo</Authors>
     <Description>C# wrapper for the fff fuzzy finder library.</Description>
     <PackageTags>fff;fuzzy;search;grep;file-finder;AOT;native-interop</PackageTags>

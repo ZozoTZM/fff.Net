@@ -20,5 +20,10 @@ packages/
 project.lock.json
 project.fragment.lock.json
 
+# Test results & coverage
+TestResults/
+*.coverage
+*.coveragexml
+*.trx
 
 src/FFF.Net/runtimes/

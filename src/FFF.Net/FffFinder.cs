@@ -1,5 +1,7 @@
 using FFF.Net.Models;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
+using System.Threading.Channels;
 
 namespace FFF.Net;
 
@@ -7,7 +9,8 @@ public sealed class FffFinder : IDisposable
 {
     private IntPtr _handle;
     private bool _disposed;
-
+    private FffNative.FffNativeWatchCallback? _nativeWatchCallback;
+    private readonly ConcurrentDictionary<ulong, Action<IReadOnlyList<FffWatchEvent>>> _watchCallbacks = new();
     public string BasePath
     {
         get
@@ -110,41 +113,9 @@ public sealed class FffFinder : IDisposable
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.BasePath);
 
-
-        IntPtr basePathPtr = IntPtr.Zero;
-        IntPtr frecencyDbPathPtr = IntPtr.Zero;
-        IntPtr historyDbPathPtr = IntPtr.Zero;
-        IntPtr logFilePathPtr = IntPtr.Zero;
-        IntPtr logLevelPtr = IntPtr.Zero;
-
+        var nativeOpts = options.ToNative(out var allocatedStrings);
         try
         {
-
-            if (options.BasePath != null) basePathPtr = Marshal.StringToCoTaskMemUTF8(options.BasePath);
-            if (options.FrecencyDbPath != null) frecencyDbPathPtr = Marshal.StringToCoTaskMemUTF8(options.FrecencyDbPath);
-            if (options.HistoryDbPath != null) historyDbPathPtr = Marshal.StringToCoTaskMemUTF8(options.HistoryDbPath);
-            if (options.LogFilePath != null) logFilePathPtr = Marshal.StringToCoTaskMemUTF8(options.LogFilePath);
-            if (options.LogLevel != null) logLevelPtr = Marshal.StringToCoTaskMemUTF8(options.LogLevel);
-
-            var nativeOpts = new FffNative.FffCreateOptions
-            {
-                Version = 1,
-                BasePath = basePathPtr,
-                FrecencyDbPath = frecencyDbPathPtr,
-                HistoryDbPath = historyDbPathPtr,
-                EnableMmapCache = options.EnableMmapCache,
-                EnableContentIndexing = options.EnableContentIndexing,
-                Watch = options.Watch,
-                AiMode = options.AiMode,
-                LogFilePath = logFilePathPtr,
-                LogLevel = logLevelPtr,
-                CacheBudgetMaxFiles = options.CacheBudgetMaxFiles,
-                CacheBudgetMaxBytes = options.CacheBudgetMaxBytes,
-                CacheBudgetMaxFileSize = options.CacheBudgetMaxFileSize,
-                EnableFsRootScanning = options.EnableFsRootScanning,
-                EnableHomeDirScanning = options.EnableHomeDirScanning
-            };
-
             IntPtr resultPtr = FffNative.FffCreateInstanceWith(in nativeOpts);
             if (resultPtr == IntPtr.Zero)
             {
@@ -169,11 +140,10 @@ public sealed class FffFinder : IDisposable
         }
         finally
         {
-            if (basePathPtr != IntPtr.Zero) Marshal.FreeCoTaskMem(basePathPtr);
-            if (frecencyDbPathPtr != IntPtr.Zero) Marshal.FreeCoTaskMem(frecencyDbPathPtr);
-            if (historyDbPathPtr != IntPtr.Zero) Marshal.FreeCoTaskMem(historyDbPathPtr);
-            if (logFilePathPtr != IntPtr.Zero) Marshal.FreeCoTaskMem(logFilePathPtr);
-            if (logLevelPtr != IntPtr.Zero) Marshal.FreeCoTaskMem(logLevelPtr);
+            foreach (var ptr in allocatedStrings)
+            {
+                Marshal.FreeCoTaskMem(ptr);
+            }
         }
     }
     /// <summary>
@@ -379,6 +349,73 @@ public sealed class FffFinder : IDisposable
         {
             FffNative.FffFreeResult(resultPtr);
         }
+    }
+
+    /// <summary>
+    /// Asynchronously wait for initial index scanning to complete without blocking the calling thread.
+    /// </summary>
+    /// <param name="timeout">The maximum duration to wait.</param>
+    /// <param name="cancellationToken">A token to cancel the wait operation.</param>
+    /// <returns><c>true</c> if the scan completed; <c>false</c> if the timeout expired or cancelled.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if this instance has been disposed.</exception>
+    public async Task<bool> WaitForScanAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var start = DateTime.UtcNow;
+        while (ScanProgress.IsScanning)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (timeout != Timeout.InfiniteTimeSpan && DateTime.UtcNow - start > timeout)
+            {
+                return false;
+            }
+            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Synchronously wait for the background file system watcher to finish initializing (`notify` thread warmup).
+    /// </summary>
+    /// <param name="timeout">The maximum duration to wait, or <see cref="Timeout.InfiniteTimeSpan"/> to wait indefinitely.</param>
+    /// <returns><c>true</c> if the watcher became ready; <c>false</c> if the timeout expired.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if this instance has been disposed.</exception>
+    public bool WaitForWatcherReady(TimeSpan timeout)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var start = DateTime.UtcNow;
+        while (!ScanProgress.IsWatcherReady)
+        {
+            if (timeout != Timeout.InfiniteTimeSpan && DateTime.UtcNow - start > timeout)
+            {
+                return false;
+            }
+            Thread.Sleep(50);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Asynchronously wait for the background file system watcher to finish initializing (`notify` thread warmup).
+    /// </summary>
+    /// <param name="timeout">The maximum duration to wait, or <see cref="Timeout.InfiniteTimeSpan"/> to wait indefinitely.</param>
+    /// <param name="cancellationToken">A token to cancel the wait operation.</param>
+    /// <returns><c>true</c> if the watcher became ready; <c>false</c> if the timeout expired or cancelled.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if this instance has been disposed.</exception>
+    public async Task<bool> WaitForWatcherReadyAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var start = DateTime.UtcNow;
+        while (!ScanProgress.IsWatcherReady)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (timeout != Timeout.InfiniteTimeSpan && DateTime.UtcNow - start > timeout)
+            {
+                return false;
+            }
+            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+        }
+        return true;
     }
 
     /// <summary>
@@ -966,6 +1003,201 @@ public sealed class FffFinder : IDisposable
 
         return ParseGrepResult(resultPtr);
     }
+    private void EnsureWatchCallbackRegistered()
+    {
+        if (_nativeWatchCallback != null) return;
+
+        _nativeWatchCallback = (watchId, batchPtr, userData) =>
+        {
+            if (batchPtr == IntPtr.Zero) return;
+            try
+            {
+                uint count = FffNative.FffWatchEventsCount(batchPtr);
+                var list = new List<FffWatchEvent>((int)count);
+
+                for (uint i = 0; i < count; i++)
+                {
+                    IntPtr pathPtr = FffNative.FffWatchEventGetPath(batchPtr, i);
+                    string? path = Marshal.PtrToStringUTF8(pathPtr);
+                    byte kind = FffNative.FffWatchEventGetKind(batchPtr, i);
+
+                    if (path != null)
+                    {
+                        list.Add(new FffWatchEvent
+                        {
+                            Path = path,
+                            Kind = (FffWatchKind)kind
+                        });
+                    }
+                }
+
+                if (_watchCallbacks.TryGetValue(watchId, out var action))
+                {
+                    action(list);
+                }
+            }
+            finally
+            {
+                FffNative.FffFreeWatchEvents(batchPtr);
+            }
+        };
+
+        IntPtr resultPtr = FffNative.FffSetWatchCallback(_handle, _nativeWatchCallback, IntPtr.Zero);
+        if (resultPtr != IntPtr.Zero)
+        {
+            try
+            {
+                var result = Marshal.PtrToStructure<FffNative.FffResult>(resultPtr);
+                if (!result.Success)
+                {
+                    string? errorMsg = Marshal.PtrToStringUTF8(result.Error);
+                    throw new InvalidOperationException($"Failed to set watch callback: {errorMsg}");
+                }
+            }
+            finally
+            {
+                FffNative.FffFreeResult(resultPtr);
+            }
+        }
+    }
+    /// <summary>
+    /// Subscribe to live file system changes matching a glob pattern or root prefix.
+    /// Requires <see cref="FffCreateOptions.Watch"/> to be set to <c>true</c> when initializing this instance.
+    /// </summary>
+    /// <param name="pattern">The glob pattern to filter watched files (e.g. <c>*.cs</c> or <c>null</c> for all).</param>
+    /// <param name="callback">The callback delegate invoked when a batch of watch events occurs.</param>
+    /// <param name="options">Optional watching options, including paths or directories to ignore.</param>
+    /// <returns>An <see cref="FffWatchSubscription"/> representing the active subscription. Disposing this token unsubscribes automatically.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if this instance has been disposed.</exception>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="callback"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if watch registration fails or if file watching was disabled.</exception>
+    public FffWatchSubscription Watch(string? pattern, Action<IReadOnlyList<FffWatchEvent>> callback, FffWatchOptions? options = null)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(callback);
+
+        EnsureWatchCallbackRegistered();
+
+        IntPtr resultPtr = IntPtr.Zero;
+        List<IntPtr> allocatedPointers = new();
+
+        try
+        {
+            if (options?.Ignore != null && options.Ignore.Count > 0)
+            {
+                int count = options.Ignore.Count;
+                IntPtr ignoreArrayPtr = Marshal.AllocCoTaskMem(IntPtr.Size * count);
+                allocatedPointers.Add(ignoreArrayPtr);
+
+                for (int i = 0; i < count; i++)
+                {
+                    IntPtr strPtr = Marshal.StringToCoTaskMemUTF8(options.Ignore[i]);
+                    allocatedPointers.Add(strPtr);
+                    Marshal.WriteIntPtr(ignoreArrayPtr, i * IntPtr.Size, strPtr);
+                }
+
+                resultPtr = FffNative.FffWatchArgs(_handle, pattern, ignoreArrayPtr, (uint)count);
+            }
+            else
+            {
+                var nativeOpts = new FffNative.FffNativeWatchOptions { Version = 1, Ignore = IntPtr.Zero, IgnoreCount = 0 };
+                resultPtr = FffNative.FffWatch(_handle, pattern, in nativeOpts);
+            }
+
+            if (resultPtr == IntPtr.Zero)
+            {
+                throw new InvalidOperationException("Failed to register watch: Native function returned null result pointer.");
+            }
+
+            var result = Marshal.PtrToStructure<FffNative.FffResult>(resultPtr);
+            if (!result.Success)
+            {
+                string? errorMsg = Marshal.PtrToStringUTF8(result.Error);
+                throw new InvalidOperationException($"Watch registration failed: {errorMsg}");
+            }
+
+            ulong watchId = (ulong)result.IntValue;
+            _watchCallbacks[watchId] = callback;
+
+            return new FffWatchSubscription(this, watchId);
+        }
+        finally
+        {
+            if (resultPtr != IntPtr.Zero)
+            {
+                FffNative.FffFreeResult(resultPtr);
+            }
+            foreach (var ptr in allocatedPointers)
+            {
+                Marshal.FreeCoTaskMem(ptr);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Unsubscribe an active watch handler by its subscription ID.
+    /// </summary>
+    /// <param name="watchId">The watch ID returned when subscribing.</param>
+    /// <returns><c>true</c> if the subscription was found and unregistered; otherwise, <c>false</c>.</returns>
+    public bool Unwatch(ulong watchId)
+    {
+        if (_disposed || _handle == IntPtr.Zero || watchId == 0) return false;
+
+        _watchCallbacks.TryRemove(watchId, out _);
+
+        IntPtr resultPtr = FffNative.FffUnwatch(_handle, watchId);
+        if (resultPtr == IntPtr.Zero) return false;
+
+        try
+        {
+            var result = Marshal.PtrToStructure<FffNative.FffResult>(resultPtr);
+            return result.Success && result.IntValue == 1;
+        }
+        finally
+        {
+            FffNative.FffFreeResult(resultPtr);
+        }
+    }
+
+    /// <summary>
+    /// Asynchronously stream live file system changes matching a glob pattern or root prefix using an unbounded channel.
+    /// Requires <see cref="FffCreateOptions.Watch"/> to be set to <c>true</c> when initializing this instance.
+    /// </summary>
+    /// <param name="pattern">The glob pattern to filter watched files (e.g. <c>*.cs</c> or <c>null</c> for all).</param>
+    /// <param name="options">Optional watching options, including paths or directories to ignore.</param>
+    /// <param name="cancellationToken">A token to cancel the asynchronous stream and automatically dispose the watch subscription.</param>
+    /// <returns>An asynchronous stream yielding batches of file watch events as they occur.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown if this instance has been disposed.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if watch registration fails or if file watching was disabled.</exception>
+    public async IAsyncEnumerable<IReadOnlyList<FffWatchEvent>> WatchAsync(
+        string? pattern,
+        FffWatchOptions? options = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (!ScanProgress.IsWatcherReady)
+        {
+            await WaitForWatcherReadyAsync(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        }
+
+        var channel = Channel.CreateUnbounded<IReadOnlyList<FffWatchEvent>>(new UnboundedChannelOptions
+        {
+            SingleWriter = true
+        });
+
+        using var subscription = Watch(pattern, batch =>
+        {
+            channel.Writer.TryWrite(batch);
+        }, options);
+
+        using var ctr = cancellationToken.Register(() => channel.Writer.TryComplete());
+
+        await foreach (var batch in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            yield return batch;
+        }
+    }
     public void Dispose()
     {
         Dispose(true);
@@ -978,6 +1210,7 @@ public sealed class FffFinder : IDisposable
         {
             if (_handle != IntPtr.Zero)
             {
+                _watchCallbacks.Clear();
                 FffNative.FffDestroy(_handle);
                 _handle = IntPtr.Zero;
             }
