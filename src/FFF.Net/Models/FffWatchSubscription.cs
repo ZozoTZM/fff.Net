@@ -1,6 +1,5 @@
 using System;
-using System.Collections.Generic;
-using System.Text;
+using System.Threading;
 
 namespace FFF.Net.Models;
 
@@ -10,8 +9,8 @@ namespace FFF.Net.Models;
 /// </summary>
 public sealed class FffWatchSubscription : IDisposable
 {
-    private FffFinder? _finder;
-    private bool _disposedValue;
+    private readonly WeakReference<FffFinder> _finderRef;
+    private int _disposedState;
 
     /// <summary>
     /// The unique native watch ID assigned to this subscription.
@@ -20,23 +19,19 @@ public sealed class FffWatchSubscription : IDisposable
 
     internal FffWatchSubscription(FffFinder finder, ulong watchId)
     {
-        _finder = finder;
+        ArgumentNullException.ThrowIfNull(finder);
+        _finderRef = new WeakReference<FffFinder>(finder);
         WatchId = watchId;
     }
 
-    private void Dispose(bool disposing)
+    private void DisposeCore()
     {
-        if (!_disposedValue)
+        if (Interlocked.Exchange(ref _disposedState, 1) == 0)
         {
-            if (disposing)
+            if (WatchId != 0 && _finderRef.TryGetTarget(out var finder))
             {
-                if (_finder != null && WatchId != 0)
-                {
-                    _finder.Unwatch(WatchId);
-                    _finder = null;
-                }
+                finder.Unwatch(WatchId);
             }
-            _disposedValue = true;
         }
     }
 
@@ -45,7 +40,15 @@ public sealed class FffWatchSubscription : IDisposable
     /// </summary>
     public void Dispose()
     {
-        Dispose(disposing: true);
+        DisposeCore();
         GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Finalizer to safely clean up native watch subscriptions if neglected by caller code.
+    /// </summary>
+    ~FffWatchSubscription()
+    {
+        DisposeCore();
     }
 }

@@ -241,4 +241,76 @@ public class FffFinderTests
         string? history = finder.GetHistoricalQuery(0);
         Assert.True(history == null || history.Length >= 0);
     }
+
+    [Fact]
+    public void MultiGrep_ReadOnlySpan_ShouldExecuteCleanly()
+    {
+        var options = new FffCreateOptions { BasePath = _testPath };
+        using var finder = new FffFinder(options);
+        finder.WaitForScan(TimeSpan.FromSeconds(5));
+
+        ReadOnlySpan<string> patterns = ["FffFinderTests", "Diagnostics"];
+        var result = finder.MultiGrep(patterns);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Items);
+    }
+
+    [Fact]
+    public async Task Watch_ConcurrentRegistration_ShouldBeThreadSafe()
+    {
+        var options = new FffCreateOptions { BasePath = _testPath, Watch = true };
+        using var finder = new FffFinder(options);
+        finder.WaitForScan(TimeSpan.FromSeconds(5));
+        Assert.True(finder.WaitForWatcherReady(TimeSpan.FromSeconds(5)));
+
+        var tasks = new List<Task>();
+        for (int i = 0; i < 10; i++)
+        {
+            tasks.Add(Task.Run(() =>
+            {
+                using var sub = finder.Watch("*.cs", _ => { });
+                Assert.NotEqual(0UL, sub.WatchId);
+            }));
+        }
+
+        await Task.WhenAll(tasks);
+    }
+
+    [Fact]
+    public async Task ConcurrentQueriesAndDispose_ShouldBeThreadSafe()
+    {
+        var options = new FffCreateOptions { BasePath = _testPath };
+        var finder = new FffFinder(options);
+        finder.WaitForScan(TimeSpan.FromSeconds(5));
+
+        var t1 = Task.Run(() =>
+        {
+            try
+            {
+                for (int i = 0; i < 50; i++)
+                {
+                    finder.Search("test");
+                }
+            }
+            catch (ObjectDisposedException) { }
+        });
+
+        var t2 = Task.Run(() =>
+        {
+            Thread.Sleep(5);
+            finder.Dispose();
+        });
+
+        await Task.WhenAll(t1, t2);
+    }
+
+    [Fact]
+    public void Reindex_WithInvalidPath_ShouldThrowFffNativeExceptionOrArgumentException()
+    {
+        var options = new FffCreateOptions { BasePath = _testPath };
+        using var finder = new FffFinder(options);
+
+        Assert.Throws<ArgumentException>(() => finder.Reindex(""));
+    }
 }
+

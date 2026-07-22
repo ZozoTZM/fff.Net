@@ -1,4 +1,4 @@
-name: Publish FFF.Net to NuGet
+name: Publish FFF.Net to NuGet & GitHub Release
 
 on:
   push:
@@ -29,11 +29,11 @@ jobs:
 
       - name: Download Native Binaries
         run: |
-          # Download fff v0.10.0
-          curl -L -o fff.dll https://github.com/dmtrKovalenko/fff/releases/download/v0.10.0/c-lib-x86_64-pc-windows-msvc.dll
-          curl -L -o libfff.so https://github.com/dmtrKovalenko/fff/releases/download/v0.10.0/c-lib-x86_64-unknown-linux-gnu.so
-          curl -L -o libfff-intel.dylib https://github.com/dmtrKovalenko/fff/releases/download/v0.10.0/c-lib-x86_64-apple-darwin.dylib
-          curl -L -o libfff-arm.dylib https://github.com/dmtrKovalenko/fff/releases/download/v0.10.0/c-lib-aarch64-apple-darwin.dylib
+          # Download fff v0.10.1 native C binaries
+          curl -L -o fff.dll https://github.com/dmtrKovalenko/fff/releases/download/v0.10.1/c-lib-x86_64-pc-windows-msvc.dll
+          curl -L -o libfff.so https://github.com/dmtrKovalenko/fff/releases/download/v0.10.1/c-lib-x86_64-unknown-linux-gnu.so
+          curl -L -o libfff-intel.dylib https://github.com/dmtrKovalenko/fff/releases/download/v0.10.1/c-lib-x86_64-apple-darwin.dylib
+          curl -L -o libfff-arm.dylib https://github.com/dmtrKovalenko/fff/releases/download/v0.10.1/c-lib-aarch64-apple-darwin.dylib
 
       - name: Place Renamed Binaries
         run: |
@@ -44,12 +44,33 @@ jobs:
 
       - name: Build and Pack Library
         run: |
+          rm -rf out
           dotnet pack src/FFF.Net/FFF.Net.csproj -c Release -o out
+
+      - name: Prepare Standalone Release Assets
+        run: |
+          # Copy standalone DLL to output directory
+          cp src/FFF.Net/bin/Release/net10.0/FFF.Net.dll out/FFF.Net.dll
+          
+          # Create zip containing standalone DLL, XML docs, PDB, and cross-platform native runtimes
+          mkdir -p out/standalone/runtimes
+          cp src/FFF.Net/bin/Release/net10.0/FFF.Net.dll out/standalone/
+          cp src/FFF.Net/bin/Release/net10.0/FFF.Net.xml out/standalone/ || true
+          cp src/FFF.Net/bin/Release/net10.0/FFF.Net.pdb out/standalone/ || true
+          cp README.md out/standalone/ || true
+          cp LICENSE out/standalone/ || true
+          cp -r src/FFF.Net/runtimes/* out/standalone/runtimes/
+          
+          cd out/standalone && zip -r ../FFF.Net-standalone.zip . && cd ../..
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: out/*.nupkg
+          files: |
+            out/*.nupkg
+            out/*.snupkg
+            out/FFF.Net.dll
+            out/FFF.Net-standalone.zip
           generate_release_notes: true
       
       - name: NuGet Login
